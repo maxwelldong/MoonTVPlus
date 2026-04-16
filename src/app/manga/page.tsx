@@ -8,6 +8,21 @@ import { MangaSearchItem, MangaShelfItem, MangaSource } from '@/lib/manga.types'
 
 import MangaCard from '@/components/MangaCard';
 
+function MangaCardSkeleton({ withButton = false }: { withButton?: boolean }) {
+  return (
+    <div className='space-y-2'>
+      <div className='overflow-hidden rounded-2xl border border-gray-200 bg-white shadow-sm dark:border-gray-800 dark:bg-gray-950'>
+        <div className='aspect-[3/4] w-full animate-pulse bg-gray-200 dark:bg-gray-800' />
+        <div className='space-y-3 p-3'>
+          <div className='h-4 w-3/4 animate-pulse rounded bg-gray-200 dark:bg-gray-800' />
+          <div className='h-3 w-1/2 animate-pulse rounded bg-gray-200 dark:bg-gray-800' />
+        </div>
+      </div>
+      {withButton && <div className='h-9 w-full animate-pulse rounded-2xl bg-gray-200 dark:bg-gray-800' />}
+    </div>
+  );
+}
+
 export default function MangaPage() {
   const [query, setQuery] = useState('');
   const [sources, setSources] = useState<MangaSource[]>([]);
@@ -108,10 +123,15 @@ export default function MangaPage() {
       <section>
         <div className='mb-4 flex items-center justify-between'>
           <h2 className='text-lg font-semibold'>搜索结果</h2>
-          {loading && <span className='text-sm text-gray-500'>搜索中...</span>}
         </div>
         {error && <div className='mb-4 text-sm text-red-500'>{error}</div>}
-        {results.length === 0 ? (
+        {loading ? (
+          <div className='grid grid-cols-2 gap-4 md:grid-cols-4 xl:grid-cols-6'>
+            {Array.from({ length: 12 }).map((_, index) => (
+              <MangaCardSkeleton key={index} withButton />
+            ))}
+          </div>
+        ) : results.length === 0 ? (
           <div className='rounded-2xl bg-gray-50 p-10 text-center text-sm text-gray-500 dark:bg-gray-900/50'>
             请输入关键词开始搜索漫画
           </div>
