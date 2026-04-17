@@ -36,12 +36,37 @@ import { userInfoCache } from './user-cache';
  */
 export class D1Storage implements IStorage {
   private db: DatabaseAdapter;
+  private schemaReady: Promise<void>;
   public adapter: RedisHashAdapter;
 
   constructor(adapter: DatabaseAdapter) {
     this.db = adapter;
+    this.schemaReady = this.ensureMangaShelfColumns();
     // 创建 Redis Hash 兼容适配器用于设备管理
     this.adapter = new RedisHashAdapter(adapter);
+  }
+
+  private async ensureMangaShelfColumns(): Promise<void> {
+    const statements = [
+      'ALTER TABLE manga_shelf ADD COLUMN latest_chapter_id TEXT',
+      'ALTER TABLE manga_shelf ADD COLUMN latest_chapter_name TEXT',
+      'ALTER TABLE manga_shelf ADD COLUMN latest_chapter_count INTEGER',
+      'ALTER TABLE manga_shelf ADD COLUMN unread_chapter_count INTEGER',
+    ];
+
+    for (const statement of statements) {
+      try {
+        const result = await this.db.prepare(statement).run();
+        if (!result.success && result.error && !/duplicate column|already exists/i.test(result.error)) {
+          console.warn('D1Storage.ensureMangaShelfColumns warning:', result.error);
+        }
+      } catch (err) {
+        const message = err instanceof Error ? err.message : String(err);
+        if (!/duplicate column|already exists|no such table/i.test(message)) {
+          console.warn('D1Storage.ensureMangaShelfColumns warning:', err);
+        }
+      }
+    }
   }
 
   // ==================== 播放记录 ====================
@@ -1780,6 +1805,7 @@ export class D1Storage implements IStorage {
 
   async getMangaShelf(userName: string, key: string): Promise<MangaShelfItem | null> {
     try {
+      await this.schemaReady;
       const result = await this.db
         .prepare('SELECT * FROM manga_shelf WHERE username = ? AND key = ?')
         .bind(userName, key)
@@ -1798,6 +1824,16 @@ export class D1Storage implements IStorage {
         status: (result.status as string) || undefined,
         lastChapterId: (result.last_chapter_id as string) || undefined,
         lastChapterName: (result.last_chapter_name as string) || undefined,
+        latestChapterId: (result.latest_chapter_id as string) || undefined,
+        latestChapterName: (result.latest_chapter_name as string) || undefined,
+        latestChapterCount:
+          result.latest_chapter_count === null || result.latest_chapter_count === undefined
+            ? undefined
+            : Number(result.latest_chapter_count),
+        unreadChapterCount:
+          result.unread_chapter_count === null || result.unread_chapter_count === undefined
+            ? undefined
+            : Number(result.unread_chapter_count),
       };
     } catch (err) {
       console.error('D1Storage.getMangaShelf error:', err);
@@ -1807,13 +1843,15 @@ export class D1Storage implements IStorage {
 
   async setMangaShelf(userName: string, key: string, item: MangaShelfItem): Promise<void> {
     try {
+      await this.schemaReady;
       await this.db
         .prepare(`
           INSERT INTO manga_shelf (
             username, key, source_id, source_name, manga_id, title, cover, save_time,
-            description, author, status, last_chapter_id, last_chapter_name
+            description, author, status, last_chapter_id, last_chapter_name,
+            latest_chapter_id, latest_chapter_name, latest_chapter_count, unread_chapter_count
           )
-          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
           ON CONFLICT(username, key) DO UPDATE SET
             source_id = excluded.source_id,
             source_name = excluded.source_name,
@@ -1825,7 +1863,11 @@ export class D1Storage implements IStorage {
             author = excluded.author,
             status = excluded.status,
             last_chapter_id = excluded.last_chapter_id,
-            last_chapter_name = excluded.last_chapter_name
+            last_chapter_name = excluded.last_chapter_name,
+            latest_chapter_id = excluded.latest_chapter_id,
+            latest_chapter_name = excluded.latest_chapter_name,
+            latest_chapter_count = excluded.latest_chapter_count,
+            unread_chapter_count = excluded.unread_chapter_count
         `)
         .bind(
           userName,
@@ -1840,7 +1882,11 @@ export class D1Storage implements IStorage {
           item.author || null,
           item.status || null,
           item.lastChapterId || null,
-          item.lastChapterName || null
+          item.lastChapterName || null,
+          item.latestChapterId || null,
+          item.latestChapterName || null,
+          item.latestChapterCount ?? null,
+          item.unreadChapterCount ?? null
         )
         .run();
     } catch (err) {
@@ -1851,6 +1897,7 @@ export class D1Storage implements IStorage {
 
   async getAllMangaShelf(userName: string): Promise<{ [key: string]: MangaShelfItem }> {
     try {
+      await this.schemaReady;
       const results = await this.db
         .prepare('SELECT * FROM manga_shelf WHERE username = ? ORDER BY save_time DESC')
         .bind(userName)
@@ -1872,6 +1919,16 @@ export class D1Storage implements IStorage {
           status: (row.status as string) || undefined,
           lastChapterId: (row.last_chapter_id as string) || undefined,
           lastChapterName: (row.last_chapter_name as string) || undefined,
+          latestChapterId: (row.latest_chapter_id as string) || undefined,
+          latestChapterName: (row.latest_chapter_name as string) || undefined,
+          latestChapterCount:
+            row.latest_chapter_count === null || row.latest_chapter_count === undefined
+              ? undefined
+              : Number(row.latest_chapter_count),
+          unreadChapterCount:
+            row.unread_chapter_count === null || row.unread_chapter_count === undefined
+              ? undefined
+              : Number(row.unread_chapter_count),
         };
       }
 

@@ -3,7 +3,7 @@
 import { BookOpen } from 'lucide-react';
 import { useEffect, useMemo, useState } from 'react';
 
-import { deleteMangaShelf, getAllMangaShelf } from '@/lib/db.client';
+import { deleteMangaShelf, getAllMangaShelf, subscribeToDataUpdates } from '@/lib/db.client';
 import { MangaShelfItem } from '@/lib/manga.types';
 
 import MangaCard from '@/components/MangaCard';
@@ -32,10 +32,17 @@ export default function MangaShelfPage() {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
+    const unsubscribe = subscribeToDataUpdates<Record<string, MangaShelfItem>>(
+      'mangaShelfUpdated',
+      setShelf
+    );
+
     getAllMangaShelf()
       .then(setShelf)
       .catch(() => undefined)
       .finally(() => setLoading(false));
+
+    return unsubscribe;
   }, []);
 
   const shelfList = useMemo(
@@ -71,7 +78,12 @@ export default function MangaShelfPage() {
               <MangaCard
                 item={item}
                 href={`/manga/detail?mangaId=${item.mangaId}&sourceId=${item.sourceId}&title=${encodeURIComponent(item.title)}&cover=${encodeURIComponent(item.cover)}&sourceName=${encodeURIComponent(item.sourceName)}`}
-                subtitle={item.lastChapterName || item.author || item.status}
+                subtitle={
+                  item.unreadChapterCount && item.unreadChapterCount > 0
+                    ? `更新至 ${item.latestChapterName || '最新章节'} · 新增 ${item.unreadChapterCount} 话`
+                    : item.lastChapterName || item.author || item.status
+                }
+                updateCount={item.unreadChapterCount}
               />
               <button
                 onClick={() => removeItem(item.sourceId, item.mangaId)}

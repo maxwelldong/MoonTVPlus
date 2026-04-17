@@ -12,11 +12,20 @@ CREATE TABLE IF NOT EXISTS manga_shelf (
   status TEXT,
   last_chapter_id TEXT,
   last_chapter_name TEXT,
+  latest_chapter_id TEXT,
+  latest_chapter_name TEXT,
+  latest_chapter_count INTEGER,
+  unread_chapter_count INTEGER,
   PRIMARY KEY (username, key),
   FOREIGN KEY (username) REFERENCES users(username) ON DELETE CASCADE
 );
 
 CREATE INDEX IF NOT EXISTS idx_manga_shelf_user_time ON manga_shelf(username, save_time DESC);
+
+ALTER TABLE manga_shelf ADD COLUMN IF NOT EXISTS latest_chapter_id TEXT;
+ALTER TABLE manga_shelf ADD COLUMN IF NOT EXISTS latest_chapter_name TEXT;
+ALTER TABLE manga_shelf ADD COLUMN IF NOT EXISTS latest_chapter_count INTEGER;
+ALTER TABLE manga_shelf ADD COLUMN IF NOT EXISTS unread_chapter_count INTEGER;
 
 CREATE TABLE IF NOT EXISTS manga_read_records (
   username TEXT NOT NULL,

@@ -53,6 +53,10 @@ export interface MangaShelfItem {
   status?: string;
   lastChapterId?: string;
   lastChapterName?: string;
+  latestChapterId?: string;
+  latestChapterName?: string;
+  latestChapterCount?: number;
+  unreadChapterCount?: number;
 }
 
 export interface MangaReadRecord {

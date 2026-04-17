@@ -34,21 +34,23 @@ export async function GET(request: NextRequest) {
 
     const config = await getSuwayomiConfig();
     const upstreamUrl = resolveUpstreamUrl(config.serverBaseUrl, pathOrUrl);
-    const buildHeaders = async (forceRelogin: boolean) => {
+    const buildHeaders = async (
+      forceRelogin: boolean
+    ): Promise<HeadersInit | undefined> => {
       if (config.authMode === 'basic_auth') {
         if (!config.username || !config.password) {
           throw new Error('Suwayomi basic_auth 缺少用户名或密码');
         }
 
-        return {
+        return new Headers({
           Authorization: `Basic ${Buffer.from(`${config.username}:${config.password}`).toString('base64')}`,
-        };
+        });
       }
 
       if (config.authMode === 'simple_login') {
-        return {
+        return new Headers({
           Cookie: await loginWithSimpleAuth(config, forceRelogin),
-        };
+        });
       }
 
       return undefined;

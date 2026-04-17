@@ -5,8 +5,8 @@ import Link from 'next/link';
 import { useSearchParams } from 'next/navigation';
 import { type MouseEvent, useEffect, useMemo, useRef, useState } from 'react';
 
-import { getAllMangaReadRecords, saveMangaReadRecord } from '@/lib/db.client';
-import type { MangaChapter, MangaDetail, MangaReadRecord } from '@/lib/manga.types';
+import { getAllMangaReadRecords, getAllMangaShelf, saveMangaReadRecord, saveMangaShelf } from '@/lib/db.client';
+import type { MangaChapter, MangaDetail, MangaReadRecord, MangaShelfItem } from '@/lib/manga.types';
 import { processImageUrl } from '@/lib/utils';
 
 import ProxyImage from '@/components/ProxyImage';
@@ -477,6 +477,51 @@ export default function MangaReadPage() {
       document.removeEventListener('visibilitychange', handleVisibilityChange);
     };
   }, [chapterId, mangaId, readMode, sourceId]);
+
+  useEffect(() => {
+    if (!mangaId || !sourceId || !chapterId || !mangaDetail) return;
+
+    const key = `${sourceId}+${mangaId}`;
+    const orderedChapters = [...(mangaDetail.chapters || [])].sort((a, b) => {
+      const diff = (a.chapterNumber || 0) - (b.chapterNumber || 0);
+      if (diff !== 0) return diff;
+      return a.id.localeCompare(b.id);
+    });
+    const latestChapter = orderedChapters[orderedChapters.length - 1];
+    const currentChapterIndex = orderedChapters.findIndex((chapter) => chapter.id === chapterId);
+    const nextUnreadChapterCount =
+      currentChapterIndex >= 0
+        ? Math.max(orderedChapters.length - currentChapterIndex - 1, 0)
+        : undefined;
+
+    getAllMangaShelf()
+      .then(async (shelf) => {
+        const item = shelf[key];
+        if (!item) return;
+
+        const nextItem: MangaShelfItem = {
+          ...item,
+          lastChapterId: chapterId,
+          lastChapterName: chapterName,
+          latestChapterId: latestChapter?.id || item.latestChapterId,
+          latestChapterName: latestChapter?.name || item.latestChapterName,
+          latestChapterCount: orderedChapters.length || item.latestChapterCount,
+          unreadChapterCount: nextUnreadChapterCount,
+        };
+
+        const changed =
+          nextItem.lastChapterId !== item.lastChapterId ||
+          nextItem.lastChapterName !== item.lastChapterName ||
+          nextItem.latestChapterId !== item.latestChapterId ||
+          nextItem.latestChapterName !== item.latestChapterName ||
+          nextItem.latestChapterCount !== item.latestChapterCount ||
+          nextItem.unreadChapterCount !== item.unreadChapterCount;
+
+        if (!changed) return;
+        await saveMangaShelf(sourceId, mangaId, nextItem);
+      })
+      .catch(() => undefined);
+  }, [chapterId, chapterName, mangaDetail, mangaId, sourceId]);
 
   const hideTransientUi = () => {
     setControlsVisible(false);

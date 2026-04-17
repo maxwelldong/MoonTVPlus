@@ -37,12 +37,34 @@ import { MusicV2HistoryRecord, MusicV2PlaylistItem, MusicV2PlaylistRecord } from
  */
 export class PostgresStorage implements IStorage {
   private db: DatabaseAdapter;
+  private schemaReady: Promise<void>;
   public adapter: any; // 用于兼容
 
   constructor(adapter: DatabaseAdapter) {
     this.db = adapter;
+    this.schemaReady = this.ensureMangaShelfColumns();
     // 创建一个简单的适配器用于设备管理
     this.adapter = new PostgresRedisHashAdapter(adapter);
+  }
+
+  private async ensureMangaShelfColumns(): Promise<void> {
+    const statements = [
+      'ALTER TABLE manga_shelf ADD COLUMN IF NOT EXISTS latest_chapter_id TEXT',
+      'ALTER TABLE manga_shelf ADD COLUMN IF NOT EXISTS latest_chapter_name TEXT',
+      'ALTER TABLE manga_shelf ADD COLUMN IF NOT EXISTS latest_chapter_count INTEGER',
+      'ALTER TABLE manga_shelf ADD COLUMN IF NOT EXISTS unread_chapter_count INTEGER',
+    ];
+
+    for (const statement of statements) {
+      try {
+        const result = await this.db.prepare(statement).run();
+        if (!result.success && result.error) {
+          console.warn('PostgresStorage.ensureMangaShelfColumns warning:', result.error);
+        }
+      } catch (err) {
+        console.warn('PostgresStorage.ensureMangaShelfColumns warning:', err);
+      }
+    }
   }
 
   // ==================== 播放记录 ====================
@@ -1752,6 +1774,7 @@ export class PostgresStorage implements IStorage {
 
   async getMangaShelf(userName: string, key: string): Promise<MangaShelfItem | null> {
     try {
+      await this.schemaReady;
       const result = await this.db
         .prepare('SELECT * FROM manga_shelf WHERE username = $1 AND key = $2')
         .bind(userName, key)
@@ -1770,6 +1793,16 @@ export class PostgresStorage implements IStorage {
         status: (result.status as string) || undefined,
         lastChapterId: (result.last_chapter_id as string) || undefined,
         lastChapterName: (result.last_chapter_name as string) || undefined,
+        latestChapterId: (result.latest_chapter_id as string) || undefined,
+        latestChapterName: (result.latest_chapter_name as string) || undefined,
+        latestChapterCount:
+          result.latest_chapter_count === null || result.latest_chapter_count === undefined
+            ? undefined
+            : Number(result.latest_chapter_count),
+        unreadChapterCount:
+          result.unread_chapter_count === null || result.unread_chapter_count === undefined
+            ? undefined
+            : Number(result.unread_chapter_count),
       };
     } catch (err) {
       console.error('PostgresStorage.getMangaShelf error:', err);
@@ -1779,13 +1812,15 @@ export class PostgresStorage implements IStorage {
 
   async setMangaShelf(userName: string, key: string, item: MangaShelfItem): Promise<void> {
     try {
+      await this.schemaReady;
       await this.db
         .prepare(`
           INSERT INTO manga_shelf (
             username, key, source_id, source_name, manga_id, title, cover, save_time,
-            description, author, status, last_chapter_id, last_chapter_name
+            description, author, status, last_chapter_id, last_chapter_name,
+            latest_chapter_id, latest_chapter_name, latest_chapter_count, unread_chapter_count
           )
-          VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
+          VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17)
           ON CONFLICT (username, key) DO UPDATE SET
             source_id = EXCLUDED.source_id,
             source_name = EXCLUDED.source_name,
@@ -1797,7 +1832,11 @@ export class PostgresStorage implements IStorage {
             author = EXCLUDED.author,
             status = EXCLUDED.status,
             last_chapter_id = EXCLUDED.last_chapter_id,
-            last_chapter_name = EXCLUDED.last_chapter_name
+            last_chapter_name = EXCLUDED.last_chapter_name,
+            latest_chapter_id = EXCLUDED.latest_chapter_id,
+            latest_chapter_name = EXCLUDED.latest_chapter_name,
+            latest_chapter_count = EXCLUDED.latest_chapter_count,
+            unread_chapter_count = EXCLUDED.unread_chapter_count
         `)
         .bind(
           userName,
@@ -1812,7 +1851,11 @@ export class PostgresStorage implements IStorage {
           item.author || null,
           item.status || null,
           item.lastChapterId || null,
-          item.lastChapterName || null
+          item.lastChapterName || null,
+          item.latestChapterId || null,
+          item.latestChapterName || null,
+          item.latestChapterCount ?? null,
+          item.unreadChapterCount ?? null
         )
         .run();
     } catch (err) {
@@ -1823,6 +1866,7 @@ export class PostgresStorage implements IStorage {
 
   async getAllMangaShelf(userName: string): Promise<{ [key: string]: MangaShelfItem }> {
     try {
+      await this.schemaReady;
       const results = await this.db
         .prepare('SELECT * FROM manga_shelf WHERE username = $1 ORDER BY save_time DESC')
         .bind(userName)
@@ -1844,6 +1888,16 @@ export class PostgresStorage implements IStorage {
           status: (row.status as string) || undefined,
           lastChapterId: (row.last_chapter_id as string) || undefined,
           lastChapterName: (row.last_chapter_name as string) || undefined,
+          latestChapterId: (row.latest_chapter_id as string) || undefined,
+          latestChapterName: (row.latest_chapter_name as string) || undefined,
+          latestChapterCount:
+            row.latest_chapter_count === null || row.latest_chapter_count === undefined
+              ? undefined
+              : Number(row.latest_chapter_count),
+          unreadChapterCount:
+            row.unread_chapter_count === null || row.unread_chapter_count === undefined
+              ? undefined
+              : Number(row.unread_chapter_count),
         };
       }
 

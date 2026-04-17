@@ -258,6 +258,7 @@ export interface EpisodeFilterConfig {
 // 通知类型枚举
 export type NotificationType =
   | 'favorite_update' // 收藏更新
+  | 'manga_update' // 漫画更新
   | 'system' // 系统通知
   | 'announcement' // 公告
   | 'movie_request' // 新求片通知（给管理员）

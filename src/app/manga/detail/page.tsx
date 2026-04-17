@@ -3,7 +3,7 @@
 import { ArrowDownWideNarrow, ArrowUpWideNarrow, BookOpen, Clock3 } from 'lucide-react';
 import Link from 'next/link';
 import { useSearchParams } from 'next/navigation';
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 
 import { deleteMangaShelf, getAllMangaReadRecords, getAllMangaShelf, saveMangaShelf } from '@/lib/db.client';
 import { MangaChapter, MangaDetail, MangaReadRecord, MangaShelfItem } from '@/lib/manga.types';
@@ -76,6 +76,7 @@ export default function MangaDetailPage() {
   const [history, setHistory] = useState<Record<string, MangaReadRecord>>({});
   const [shelf, setShelf] = useState<Record<string, MangaShelfItem>>({});
   const [descOrder, setDescOrder] = useState(true);
+  const clearedOnOpenRef = useRef<string | null>(null);
 
   const key = `${sourceId}+${mangaId}`;
   const currentRecord = history[key];
@@ -111,6 +112,45 @@ export default function MangaDetailPage() {
     });
   }, [detail?.chapters, descOrder]);
 
+  const chronologicalChapters = useMemo(() => {
+    const list = detail?.chapters || [];
+    return [...list].sort((a, b) => {
+      const diff = (a.chapterNumber || 0) - (b.chapterNumber || 0);
+      if (diff !== 0) return diff;
+      return a.id.localeCompare(b.id);
+    });
+  }, [detail?.chapters]);
+
+  const latestChapter = chronologicalChapters[chronologicalChapters.length - 1];
+  const unreadChapterCount = shelf[key]?.unreadChapterCount || 0;
+  const newChapterIds = useMemo(() => {
+    if (unreadChapterCount <= 0) return new Set<string>();
+    return new Set(chronologicalChapters.slice(-unreadChapterCount).map((chapter) => chapter.id));
+  }, [chronologicalChapters, unreadChapterCount]);
+
+  useEffect(() => {
+    const shelfItem = shelf[key];
+    if (!detail || !shelfItem || !latestChapter || (shelfItem.unreadChapterCount || 0) <= 0) {
+      return;
+    }
+
+    if (clearedOnOpenRef.current === key) {
+      return;
+    }
+    clearedOnOpenRef.current = key;
+
+    const nextItem: MangaShelfItem = {
+      ...shelfItem,
+      latestChapterId: latestChapter.id,
+      latestChapterName: latestChapter.name,
+      latestChapterCount: chronologicalChapters.length,
+      unreadChapterCount: 0,
+    };
+
+    // 只后台清零，当前页保留进入时看到的更新提示，刷新后再消失。
+    saveMangaShelf(sourceId, mangaId, nextItem).catch(() => undefined);
+  }, [chronologicalChapters.length, detail, key, latestChapter, mangaId, shelf, sourceId]);
+
   const toggleShelf = async () => {
     if (!detail) return;
     if (shelf[key]) {
@@ -135,6 +175,10 @@ export default function MangaDetailPage() {
       status: detail.status,
       lastChapterId: currentRecord?.chapterId,
       lastChapterName: currentRecord?.chapterName,
+      latestChapterId: latestChapter?.id,
+      latestChapterName: latestChapter?.name,
+      latestChapterCount: chronologicalChapters.length,
+      unreadChapterCount: 0,
     };
     await saveMangaShelf(sourceId, mangaId, item);
     setShelf((prev) => ({ ...prev, [key]: item }));
@@ -196,16 +240,29 @@ export default function MangaDetailPage() {
             {descOrder ? <ArrowDownWideNarrow className='inline h-4 w-4' /> : <ArrowUpWideNarrow className='inline h-4 w-4' />} {descOrder ? '倒序' : '正序'}
           </button>
         </div>
+        {unreadChapterCount > 0 && latestChapter && (
+          <div className='mb-4 rounded-2xl border border-sky-200 bg-sky-50 px-4 py-3 text-sm text-sky-700 dark:border-sky-900/50 dark:bg-sky-950/30 dark:text-sky-300'>
+            已更新 {unreadChapterCount} 话，最新章节：{latestChapter.name}
+          </div>
+        )}
         <div className='grid gap-3'>
           {chapters.map((chapter) => {
             const active = currentRecord?.chapterId === chapter.id;
+            const isNewChapter = newChapterIds.has(chapter.id);
             return (
               <Link
                 key={chapter.id}
                 href={chapterHref(chapter)}
-                className={`rounded-2xl border px-4 py-3 text-sm transition ${active ? 'border-sky-400 bg-sky-50 dark:bg-sky-950/30' : 'border-gray-200 hover:border-sky-300 dark:border-gray-700'}`}
+                className={`rounded-2xl border px-4 py-3 text-sm transition ${active ? 'border-sky-400 bg-sky-50 dark:bg-sky-950/30' : isNewChapter ? 'border-emerald-300 bg-emerald-50/80 dark:border-emerald-800 dark:bg-emerald-950/20' : 'border-gray-200 hover:border-sky-300 dark:border-gray-700'}`}
               >
-                <div className='font-medium text-gray-900 dark:text-gray-100'>{chapter.name}</div>
+                <div className='flex items-center justify-between gap-3'>
+                  <div className='font-medium text-gray-900 dark:text-gray-100'>{chapter.name}</div>
+                  {isNewChapter && (
+                    <span className='rounded-full bg-emerald-500/10 px-2 py-0.5 text-[11px] font-medium text-emerald-600 dark:text-emerald-300'>
+                      NEW
+                    </span>
+                  )}
+                </div>
                 <div className='mt-1 text-xs text-gray-500'>
                   {formatChapterMeta(chapter)}
                   {active && currentRecord ? ` · 上次看到第 ${currentRecord.pageIndex + 1} 页` : ''}
