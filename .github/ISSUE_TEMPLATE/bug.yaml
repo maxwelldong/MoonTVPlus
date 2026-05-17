@@ -88,7 +88,7 @@ body:
       options:
         - label: 是
         
-  - type: input
+  - type: checkboxes
     attributes:
       label: 我已认真填写所有复现步骤并正确选择了对应环境
       description: 我已知晓不认真填写不会得到回应且可能会被close
